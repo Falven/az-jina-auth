@@ -1,0 +1,105 @@
+{
+	"openapi": "3.0.3",
+	"info": {
+		"title": "az-jina-auth API",
+		"version": "0.1.0",
+		"description": "Jina-compatible dashboard auth API for DataControl."
+	},
+	"servers": [
+		{
+			"url": "/",
+			"description": "Current deployment"
+		}
+	],
+	"components": {
+		"securitySchemes": {
+			"BearerAuth": {
+				"type": "http",
+				"scheme": "bearer",
+				"bearerFormat": "Entra JWT"
+			}
+		}
+	},
+	"apiDir": "src/app",
+	"routerType": "app",
+	"schemaDir": "src/openapi",
+	"schemaType": "zod",
+	"outputFile": "openapi.json",
+	"outputDir": "./public",
+	"docsUrl": "/docs",
+	"includeOpenApiRoutes": true,
+	"ignoreRoutes": ["/docs", "/openapi.json"],
+	"responseSets": {
+		"auth": ["400", "401", "403", "500"],
+		"none": []
+	},
+	"errorConfig": {
+		"template": {
+			"type": "object",
+			"required": ["error"],
+			"properties": {
+				"error": {
+					"type": "object",
+					"required": ["code", "message"],
+					"properties": {
+						"code": {
+							"type": "string",
+							"example": "{{ERROR_CODE}}"
+						},
+						"message": {
+							"type": "string",
+							"example": "{{ERROR_MESSAGE}}"
+						},
+						"details": {}
+					},
+					"additionalProperties": true
+				}
+			},
+			"additionalProperties": false
+		},
+		"codes": {
+			"400": {
+				"description": "Invalid request payload",
+				"variables": {
+					"ERROR_CODE": "invalid_request",
+					"ERROR_MESSAGE": "Request validation failed"
+				}
+			},
+			"401": {
+				"description": "Unauthorized",
+				"variables": {
+					"ERROR_CODE": "unauthorized",
+					"ERROR_MESSAGE": "Missing or invalid Entra token"
+				}
+			},
+			"402": {
+				"description": "Insufficient balance",
+				"variables": {
+					"ERROR_CODE": "insufficient_balance",
+					"ERROR_MESSAGE": "Token does not have enough balance"
+				}
+			},
+			"403": {
+				"description": "Forbidden",
+				"variables": {
+					"ERROR_CODE": "forbidden",
+					"ERROR_MESSAGE": "Caller is not allowed to access this endpoint"
+				}
+			},
+			"409": {
+				"description": "Token already exists",
+				"variables": {
+					"ERROR_CODE": "token_exists",
+					"ERROR_MESSAGE": "Token already exists"
+				}
+			},
+			"500": {
+				"description": "Internal error",
+				"variables": {
+					"ERROR_CODE": "internal_error",
+					"ERROR_MESSAGE": "Unexpected internal error"
+				}
+			}
+		}
+	}
+}

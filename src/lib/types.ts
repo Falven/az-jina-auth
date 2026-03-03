@@ -19,6 +19,7 @@ export type TokenMetadata = Record<string, unknown>;
 export type TokenAccountDocument = {
   id: string;
   _id: string;
+  _etag?: string;
   token_hash: string;
   status: TokenStatus;
   user_id: string;

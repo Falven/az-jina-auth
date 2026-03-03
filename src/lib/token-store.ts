@@ -121,6 +121,7 @@ const normalizeTokenAccount = (token: string, raw: Record<string, unknown>): Tok
   return {
     id,
     _id: typeof raw._id === "string" && raw._id.length > 0 ? raw._id : id,
+    _etag: typeof raw._etag === "string" && raw._etag.length > 0 ? raw._etag : undefined,
     token_hash: typeof raw.token_hash === "string" && raw.token_hash.length > 0 ? raw.token_hash : hashToken(token),
     status,
     user_id: typeof raw.user_id === "string" && raw.user_id.length > 0 ? raw.user_id : token,
@@ -132,6 +133,22 @@ const normalizeTokenAccount = (token: string, raw: Record<string, unknown>): Tok
     updatedAt: typeof raw.updatedAt === "string" && raw.updatedAt.length > 0 ? raw.updatedAt : nowIso(),
     revokedAt: typeof raw.revokedAt === "string" ? raw.revokedAt : undefined,
   };
+};
+
+const resolveStatusCode = (error: unknown): number | undefined => {
+  if (typeof error !== "object" || error === null) {
+    return undefined;
+  }
+
+  if ("code" in error && typeof (error as { code?: unknown }).code === "number") {
+    return (error as { code: number }).code;
+  }
+
+  if ("statusCode" in error && typeof (error as { statusCode?: unknown }).statusCode === "number") {
+    return (error as { statusCode: number }).statusCode;
+  }
+
+  return undefined;
 };
 
 const readTokenRecord = async (token: string): Promise<TokenAccountDocument | undefined> => {
@@ -178,41 +195,6 @@ const upsertTokenRecord = async (record: TokenAccountDocument): Promise<TokenAcc
   return normalizeTokenAccount(record.id, resolved);
 };
 
-const createBootstrapMachineRecord = async (token: string): Promise<TokenAccountDocument> => {
-  const env = getEnv();
-  const now = nowIso();
-
-  const record: TokenAccountDocument = {
-    id: token,
-    _id: token,
-    token_hash: hashToken(token),
-    status: "active",
-    user_id: env.bootstrapMachineUserId,
-    full_name: env.bootstrapMachineFullName,
-    wallet: {
-      total_balance: env.bootstrapMachineBalance,
-      total_used: 0,
-    },
-    metadata: {
-      speed_level: env.bootstrapMachineSpeedLevel,
-    },
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  return upsertTokenRecord(record);
-};
-
-const maybeBootstrapMachineToken = async (token: string): Promise<TokenAccountDocument | undefined> => {
-  const env = getEnv();
-
-  if (!env.bootstrapMachineToken || token !== env.bootstrapMachineToken) {
-    return undefined;
-  }
-
-  return createBootstrapMachineRecord(token);
-};
-
 export const generateOpaqueToken = (): string => {
   const suffix = randomBytes(24).toString("base64url");
   return `jina_${suffix}`;
@@ -245,11 +227,6 @@ export const getTokenAccountOrThrow = async (token: string): Promise<TokenAccoun
   const existing = await getTokenAccount(token);
   if (existing) {
     return existing;
-  }
-
-  const bootstrapped = await maybeBootstrapMachineToken(token);
-  if (bootstrapped) {
-    return bootstrapped;
   }
 
   throw new HttpError(401, "invalid_api_key", "Invalid API key");
@@ -346,26 +323,59 @@ export const reportTokenUsage = async (
   token: string,
   usageTokens: number,
 ): Promise<TokenAccountDocument> => {
-  const existing = await assertActiveTokenAccount(token);
+  const container = getTokensContainer();
 
-  if (usageTokens <= 0) {
-    return existing;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const existing = await assertActiveTokenAccount(token);
+
+    if (usageTokens <= 0) {
+      return existing;
+    }
+
+    if (existing.wallet.total_balance < usageTokens) {
+      throw new HttpError(402, "insufficient_balance", "Insufficient balance");
+    }
+
+    if (!existing._etag) {
+      throw new HttpError(
+        500,
+        "missing_etag",
+        "Token document is missing _etag required for usage updates",
+      );
+    }
+
+    const totalUsed = typeof existing.wallet.total_used === "number" ? existing.wallet.total_used : 0;
+    const nextDoc: TokenAccountDocument = {
+      ...existing,
+      wallet: {
+        total_balance: existing.wallet.total_balance - usageTokens,
+        total_used: totalUsed + usageTokens,
+      },
+      updatedAt: nowIso(),
+    };
+
+    try {
+      const { resource } = await container.item(token, token).replace(nextDoc, {
+        accessCondition: {
+          type: "IfMatch",
+          condition: existing._etag,
+        },
+      });
+
+      return normalizeTokenAccount(token, (resource ?? nextDoc) as Record<string, unknown>);
+    } catch (error) {
+      const statusCode = resolveStatusCode(error);
+      if (statusCode === 412) {
+        continue;
+      }
+
+      throw error;
+    }
   }
 
-  if (existing.wallet.total_balance < usageTokens) {
-    throw new HttpError(402, "insufficient_balance", "Insufficient balance");
-  }
-
-  const totalUsed = typeof existing.wallet.total_used === "number" ? existing.wallet.total_used : 0;
-
-  const updated: TokenAccountDocument = {
-    ...existing,
-    wallet: {
-      total_balance: existing.wallet.total_balance - usageTokens,
-      total_used: totalUsed + usageTokens,
-    },
-    updatedAt: nowIso(),
-  };
-
-  return upsertTokenRecord(updated);
+  throw new HttpError(
+    409,
+    "concurrency_conflict",
+    "Failed to update usage due to concurrent writes. Retry the request.",
+  );
 };

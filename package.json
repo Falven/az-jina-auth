@@ -1,25 +1,33 @@
 {
   "name": "az-jina-auth",
   "version": "0.1.0",
+  "packageManager": "pnpm@10.30.3",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "openapi:generate": "cd \"$(dirname \"$npm_package_json\")\" && next-openapi-gen generate --template next.openapi.json",
+    "predev": "pnpm run openapi:generate",
+    "dev": "next dev --webpack",
+    "prebuild": "pnpm run openapi:generate",
     "build": "next build",
+    "image:build": "cd ../.. && uv run build-and-push-image datacontrol/az-jina-auth ${VERSION:-$npm_package_version} apps/az-jina-auth/Dockerfile",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
     "@azure/cosmos": "^4.5.1",
     "@azure/identity": "^4.13.0",
+    "@scalar/nextjs-api-reference": "^0.9.24",
     "next": "^16.1.6",
     "react": "19.1.1",
     "react-dom": "19.1.1",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.3.11",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
+    "next-openapi-gen": "^0.10.3",
     "typescript": "^5.8.2"
   }
 }

@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
+/**
+ * Health check
+ * @description Service health response.
+ * @response 200:HealthResponseSchema:Service health response
+ * @responseSet none
+ * @openapi
+ */
 export async function GET() {
   return NextResponse.json({
     status: "ok",
