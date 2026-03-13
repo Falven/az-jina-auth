@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { isAllowedAudience } from "./audience";
 import { getEnv } from "./env";
 import { HttpError } from "./errors";
 
@@ -204,9 +205,9 @@ const assertTenantIssuerAudience = (principal: PrincipalContext) => {
 	}
 
 	if (
-		env.entraAudience &&
+		env.entraAudiences.length > 0 &&
 		principal.audience &&
-		principal.audience !== env.entraAudience
+		!isAllowedAudience(env.entraAudiences, principal.audience)
 	) {
 		throw new HttpError(
 			403,
